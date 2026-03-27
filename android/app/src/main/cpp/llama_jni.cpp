@@ -345,8 +345,6 @@ Java_com_remotellm_LlamaModule_nativeProcessUserPrompt(JNIEnv *env, jobject, jst
         tokens.resize(max_size);
     }
 
-    int prompt_size = (int)tokens.size();
-
     if (decode_tokens_in_batches(tokens, true)) {
         LOGE("Failed to decode user prompt");
         return 2;
