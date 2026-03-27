@@ -158,10 +158,11 @@ void tq_cache_store(tq_cache *cache, int layer, int head, int pos,
     if (needs_fallback) {
         // Store original (pre-rotation) vector as FP32 fallback
         memcpy(&lc->fallback[entry_idx * d], vec, d * sizeof(float));
-        cache->fallback_stores++;
+        // Atomic increment — tq_cache_store runs multi-threaded from ggml callbacks
+        __atomic_fetch_add(&cache->fallback_stores, 1, __ATOMIC_RELAXED);
     }
 
-    cache->total_stores++;
+    __atomic_fetch_add(&cache->total_stores, 1, __ATOMIC_RELAXED);
 }
 
 void tq_cache_load(const tq_cache *cache, int layer, int head, int pos,
