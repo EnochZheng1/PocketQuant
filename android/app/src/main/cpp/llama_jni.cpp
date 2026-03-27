@@ -96,29 +96,42 @@ static void reset_short_term_states() {
 
 static void shift_context() {
     const int n_discard = (g_cur_pos - g_system_pos) / 2;
-    LOGI("shift_context: discarding %d tokens", n_discard);
+    LOGI("shift_context: discarding %d tokens (pos %d -> %d)",
+         n_discard, g_cur_pos, g_cur_pos - n_discard);
     llama_memory_seq_rm(llama_get_memory(g_context), 0, g_system_pos, g_system_pos + n_discard);
     llama_memory_seq_add(llama_get_memory(g_context), 0, g_system_pos + n_discard, g_cur_pos, -n_discard);
+
+    // Keep turbo cache in sync — shift compressed entries to match llama.cpp's memmove
+    if (g_turbo_enabled && g_turbo_cache) {
+        tq_cache_shift(g_turbo_cache, n_discard);
+    }
+
     g_cur_pos -= n_discard;
 }
 
+/**
+ * Decode tokens in batches, writing directly to g_cur_pos.
+ * If context fills mid-batch, shift_context() runs and g_cur_pos adjusts
+ * automatically — no stale local position variable.
+ */
 static int decode_tokens_in_batches(
     const std::vector<llama_token> &tokens,
-    llama_pos start_pos,
     bool logit_last = false
 ) {
     for (int i = 0; i < (int)tokens.size(); i += BATCH_SIZE) {
         const int n = std::min((int)tokens.size() - i, BATCH_SIZE);
         common_batch_clear(g_batch);
 
-        if (start_pos + i + n >= g_current_ctx_size - OVERFLOW_HEADROOM) {
-            LOGW("decode_tokens_in_batches: context full, shifting");
+        // Check against global position — shift if needed
+        if (g_cur_pos + n >= g_current_ctx_size - OVERFLOW_HEADROOM) {
+            LOGW("decode_tokens_in_batches: context full at %d, shifting", g_cur_pos);
             shift_context();
         }
 
         for (int j = 0; j < n; j++) {
             bool want_logit = logit_last && (i + j == (int)tokens.size() - 1);
-            common_batch_add(g_batch, tokens[i + j], start_pos + i + j, {0}, want_logit);
+            // Use and increment global position directly
+            common_batch_add(g_batch, tokens[i + j], g_cur_pos++, {0}, want_logit);
         }
 
         if (llama_decode(g_context, g_batch) != 0) {
@@ -295,12 +308,13 @@ Java_com_remotellm_LlamaModule_nativeProcessSystemPrompt(JNIEnv *env, jobject, j
         return 1;
     }
 
-    if (decode_tokens_in_batches(tokens, g_cur_pos)) {
+    if (decode_tokens_in_batches(tokens)) {
         LOGE("Failed to decode system prompt");
         return 2;
     }
 
-    g_system_pos = g_cur_pos = (int)tokens.size();
+    // g_cur_pos was already advanced by decode_tokens_in_batches
+    g_system_pos = g_cur_pos;
     return 0;
 }
 
@@ -330,14 +344,15 @@ Java_com_remotellm_LlamaModule_nativeProcessUserPrompt(JNIEnv *env, jobject, jst
         tokens.resize(max_size);
     }
 
-    if (decode_tokens_in_batches(tokens, g_cur_pos, true)) {
+    int prompt_size = (int)tokens.size();
+
+    if (decode_tokens_in_batches(tokens, true)) {
         LOGE("Failed to decode user prompt");
         return 2;
     }
 
-    int prompt_size = (int)tokens.size();
-    g_cur_pos  += prompt_size;
-    g_stop_pos  = g_cur_pos + prompt_size + maxTokens;
+    // g_cur_pos was already advanced by decode_tokens_in_batches
+    g_stop_pos = g_cur_pos + prompt_size + maxTokens;
     return 0;
 }
 

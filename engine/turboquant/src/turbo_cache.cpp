@@ -231,3 +231,53 @@ void tq_cache_clear(tq_cache *cache) {
     cache->total_stores = 0;
     cache->fallback_stores = 0;
 }
+
+/**
+ * Shift cache entries to mirror llama.cpp's shift_context().
+ * Discards the first n_discard positions per head, slides the rest down.
+ * This keeps the compressed cache in sync with the ggml KV buffer positions.
+ */
+static void shift_layer_cache(tq_layer_cache *lc, int n_heads, int max_seq,
+                               int head_dim, int words_per_head, int n_discard) {
+    for (int h = 0; h < n_heads; h++) {
+        size_t head_offset = (size_t)h * max_seq;
+        int remaining = max_seq - n_discard;
+        if (remaining <= 0) continue;
+
+        // Shift bits: each position has words_per_head uint32_t values
+        memmove(&lc->bits[(head_offset) * words_per_head],
+                &lc->bits[(head_offset + n_discard) * words_per_head],
+                (size_t)remaining * words_per_head * sizeof(uint32_t));
+
+        // Shift scales
+        memmove(&lc->scales[head_offset],
+                &lc->scales[head_offset + n_discard],
+                (size_t)remaining * sizeof(float));
+
+        // Shift flags
+        memmove(&lc->flags[head_offset],
+                &lc->flags[head_offset + n_discard],
+                (size_t)remaining * sizeof(uint8_t));
+
+        // Shift fallback FP32 data
+        memmove(&lc->fallback[(head_offset) * head_dim],
+                &lc->fallback[(head_offset + n_discard) * head_dim],
+                (size_t)remaining * head_dim * sizeof(float));
+
+        // Zero out the vacated tail positions
+        memset(&lc->flags[head_offset + remaining], 0,
+               (size_t)n_discard * sizeof(uint8_t));
+    }
+}
+
+void tq_cache_shift(tq_cache *cache, int n_discard) {
+    if (n_discard <= 0) return;
+
+    for (int l = 0; l < cache->n_layers; l++) {
+        shift_layer_cache(&cache->k_cache[l], cache->n_heads, cache->max_seq,
+                          cache->head_dim, cache->words_per_head, n_discard);
+        shift_layer_cache(&cache->v_cache[l], cache->n_heads, cache->max_seq,
+                          cache->head_dim, cache->words_per_head, n_discard);
+    }
+
+}

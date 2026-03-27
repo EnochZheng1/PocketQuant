@@ -172,6 +172,16 @@ void tq_cache_get_stats(const tq_cache *cache, tq_cache_stats *stats);
 /** Clear all entries (keep allocated memory). */
 void tq_cache_clear(tq_cache *cache);
 
+/**
+ * Shift cache entries to stay in sync with llama.cpp context shifting.
+ * Discards the first n_discard positions and slides the rest down.
+ * Must be called whenever shift_context() runs in the JNI layer.
+ *
+ * @param cache      Cache handle
+ * @param n_discard  Number of positions to discard from the front
+ */
+void tq_cache_shift(tq_cache *cache, int n_discard);
+
 #ifdef __cplusplus
 }
 #endif
