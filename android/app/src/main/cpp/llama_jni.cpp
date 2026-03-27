@@ -23,6 +23,7 @@
 #include "common.h"
 #include "llama.h"
 #include "sampling.h"
+#include "turboquant.h"
 
 #define TAG "RemoteLLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
@@ -49,6 +50,10 @@ static llama_context               *g_context        = nullptr;
 static common_sampler              *g_sampler        = nullptr;
 static llama_batch                  g_batch;
 static common_chat_templates_ptr    g_chat_templates;
+
+// TurboQuant compressed KV cache (Milestone C)
+static tq_cache                    *g_turbo_cache    = nullptr;
+static bool                         g_turbo_enabled  = false;
 
 // Chat history and position tracking
 static std::vector<common_chat_msg> g_chat_msgs;
@@ -182,9 +187,9 @@ Java_com_remotellm_LlamaModule_nativeInit(JNIEnv *env, jobject, jstring jNativeL
  * Returns 0 on success, 1 on failure.
  */
 JNIEXPORT jint JNICALL
-Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jModelPath, jint nThreads) {
+Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jModelPath, jint nThreads, jboolean useTurbo) {
     const char *path = env->GetStringUTFChars(jModelPath, nullptr);
-    LOGI("Loading model from: %s", path);
+    LOGI("Loading model from: %s (turbo=%d)", path, (int)useTurbo);
 
     llama_model_params model_params = llama_model_default_params();
     llama_model *model = llama_model_load_from_file(path, model_params);
@@ -201,19 +206,51 @@ Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jMo
         std::min(N_THREADS_MAX, nThreads));
     LOGI("Using %d threads", threads);
 
+    // Create TurboQuant cache if requested
+    g_turbo_enabled = (bool)useTurbo;
+    if (g_turbo_enabled) {
+        int n_layers  = llama_model_n_layer(g_model);
+        int n_heads   = llama_model_n_head_kv(g_model);
+        int n_embd    = llama_model_n_embd(g_model);
+        int n_head_q  = llama_model_n_head(g_model);
+        int head_dim  = n_embd / n_head_q;
+        int ctx_size  = DEFAULT_CTX_SIZE * 4;  // turbo allows 4x larger context
+
+        LOGI("TurboQuant: %d layers, %d kv_heads, head_dim=%d, ctx=%d",
+             n_layers, n_heads, head_dim, ctx_size);
+
+        g_turbo_cache = tq_cache_create(n_layers, n_heads, head_dim,
+                                         ctx_size, 42, 0.2f);
+    }
+
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx           = DEFAULT_CTX_SIZE;
+    ctx_params.n_ctx           = g_turbo_enabled ? DEFAULT_CTX_SIZE * 4 : DEFAULT_CTX_SIZE;
     ctx_params.n_batch         = BATCH_SIZE;
     ctx_params.n_ubatch        = BATCH_SIZE;
     ctx_params.n_threads       = threads;
     ctx_params.n_threads_batch = threads;
 
+    if (g_turbo_enabled && g_turbo_cache) {
+        // Force F32 KV types for easy NEON access in compression callbacks
+        ctx_params.type_k          = GGML_TYPE_F32;
+        ctx_params.type_v          = GGML_TYPE_F32;
+        // Force flash attention ON for non-transposed V layout
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+        ctx_params.turbo_cache     = true;
+        ctx_params.turbo_cache_ptr = (void *)g_turbo_cache;
+    }
+
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {
         LOGE("Failed to create context");
+        if (g_turbo_cache) { tq_cache_free(g_turbo_cache); g_turbo_cache = nullptr; }
         llama_model_free(g_model);
         g_model = nullptr;
         return 1;
+    }
+
+    if (g_turbo_enabled) {
+        LOGI("TurboQuant cache attached to context");
     }
 
     // Create batch
@@ -227,7 +264,7 @@ Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jMo
     sparams.temp = DEFAULT_TEMP;
     g_sampler = common_sampler_init(g_model, sparams);
 
-    LOGI("Model loaded successfully");
+    LOGI("Model loaded successfully (turbo=%d)", g_turbo_enabled);
     return 0;
 }
 
@@ -382,6 +419,12 @@ Java_com_remotellm_LlamaModule_nativeUnload(JNIEnv *, jobject) {
         llama_model_free(g_model);
         g_model = nullptr;
     }
+    // Free turbo cache AFTER model/context (they may reference it)
+    if (g_turbo_cache) {
+        tq_cache_free(g_turbo_cache);
+        g_turbo_cache = nullptr;
+    }
+    g_turbo_enabled = false;
     LOGI("Model unloaded, all resources freed");
 }
 
@@ -392,6 +435,27 @@ JNIEXPORT void JNICALL
 Java_com_remotellm_LlamaModule_nativeShutdown(JNIEnv *, jobject) {
     llama_backend_free();
     LOGI("Backend shut down");
+}
+
+/**
+ * Get TurboQuant compression stats.
+ * Returns [compressionRatio, fallbackRate, totalEntries] or empty if not enabled.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_com_remotellm_LlamaModule_nativeGetTurboStats(JNIEnv *env, jobject) {
+    jfloatArray result = env->NewFloatArray(3);
+    if (!g_turbo_cache) return result;
+
+    tq_cache_stats stats;
+    tq_cache_get_stats(g_turbo_cache, &stats);
+
+    float data[3] = {
+        stats.compression_ratio,
+        stats.fallback_rate,
+        (float)stats.total_entries
+    };
+    env->SetFloatArrayRegion(result, 0, 3, data);
+    return result;
 }
 
 /**

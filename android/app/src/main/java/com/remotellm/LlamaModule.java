@@ -27,13 +27,14 @@ public class LlamaModule extends NativeLlamaSpec {
 
     // JNI native methods
     private native void nativeInit(String nativeLibDir);
-    private native int  nativeLoadModel(String path, int nThreads);
+    private native int  nativeLoadModel(String path, int nThreads, boolean useTurbo);
     private native int  nativeProcessSystemPrompt(String prompt);
     private native int  nativeProcessUserPrompt(String prompt, int maxTokens);
     private native String nativeGenerateNextToken();
     private native void nativeUnload();
     private native void nativeShutdown();
     private native float[] nativeGetModelInfo();
+    private native float[] nativeGetTurboStats();
 
     static {
         System.loadLibrary("remotellm");
@@ -78,7 +79,7 @@ public class LlamaModule extends NativeLlamaSpec {
                     modelLoaded = false;
                 }
 
-                int result = nativeLoadModel(modelPath, nThreads);
+                int result = nativeLoadModel(modelPath, nThreads, false);
                 if (result == 0) {
                     // Process a default system prompt
                     nativeProcessSystemPrompt("You are a helpful assistant.");

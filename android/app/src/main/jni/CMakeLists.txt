@@ -24,15 +24,19 @@ if(DEFINED ANDROID_ABI)
     endif()
 endif()
 
+# ---------------------------------------------------------------------------
+# TurboQuant: KV cache compression library (must be before llama.cpp)
+# llama-kv-cache-turbo.cpp in llama depends on turboquant.h
+# ---------------------------------------------------------------------------
+set(TURBOQUANT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine/turboquant")
+add_subdirectory(${TURBOQUANT_SRC} build-turboquant)
+
 # Path to llama.cpp submodule (from android/app/src/main/jni/ -> project root)
 set(LLAMA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine/llama.cpp")
 add_subdirectory(${LLAMA_SRC} build-llama)
 
-# ---------------------------------------------------------------------------
-# TurboQuant: KV cache compression library (Milestone B)
-# ---------------------------------------------------------------------------
-set(TURBOQUANT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine/turboquant")
-add_subdirectory(${TURBOQUANT_SRC} build-turboquant)
+# Link turboquant to llama so llama-kv-cache-turbo.cpp can use tq_cache functions
+target_link_libraries(llama PRIVATE turboquant)
 
 # ---------------------------------------------------------------------------
 # JNI shared library for our inference engine
