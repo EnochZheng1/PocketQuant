@@ -180,7 +180,7 @@ void tq_cache_clear(tq_cache *cache);
  * @param cache      Cache handle
  * @param n_discard  Number of positions to discard from the front
  */
-void tq_cache_shift(tq_cache *cache, int n_discard);
+void tq_cache_shift(tq_cache *cache, int n_discard, int system_pos);
 
 #ifdef __cplusplus
 }

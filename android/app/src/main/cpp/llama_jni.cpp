@@ -101,9 +101,9 @@ static void shift_context() {
     llama_memory_seq_rm(llama_get_memory(g_context), 0, g_system_pos, g_system_pos + n_discard);
     llama_memory_seq_add(llama_get_memory(g_context), 0, g_system_pos + n_discard, g_cur_pos, -n_discard);
 
-    // Keep turbo cache in sync — shift compressed entries to match llama.cpp's memmove
+    // Keep turbo cache in sync — preserve system prompt, shift only user tokens
     if (g_turbo_enabled && g_turbo_cache) {
-        tq_cache_shift(g_turbo_cache, n_discard);
+        tq_cache_shift(g_turbo_cache, n_discard, g_system_pos);
     }
 
     g_cur_pos -= n_discard;
