@@ -54,6 +54,7 @@ static common_chat_templates_ptr    g_chat_templates;
 // TurboQuant compressed KV cache (Milestone C)
 static tq_cache                    *g_turbo_cache    = nullptr;
 static bool                         g_turbo_enabled  = false;
+static int                          g_current_ctx_size = DEFAULT_CTX_SIZE;
 
 // Chat history and position tracking
 static std::vector<common_chat_msg> g_chat_msgs;
@@ -110,7 +111,7 @@ static int decode_tokens_in_batches(
         const int n = std::min((int)tokens.size() - i, BATCH_SIZE);
         common_batch_clear(g_batch);
 
-        if (start_pos + i + n >= DEFAULT_CTX_SIZE - OVERFLOW_HEADROOM) {
+        if (start_pos + i + n >= g_current_ctx_size - OVERFLOW_HEADROOM) {
             LOGW("decode_tokens_in_batches: context full, shifting");
             shift_context();
         }
@@ -214,7 +215,7 @@ Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jMo
         int n_embd    = llama_model_n_embd(g_model);
         int n_head_q  = llama_model_n_head(g_model);
         int head_dim  = n_embd / n_head_q;
-        int ctx_size  = DEFAULT_CTX_SIZE * 4;  // turbo allows 4x larger context
+        int ctx_size  = DEFAULT_CTX_SIZE * 4;  // turbo: 4x context (set to g_current_ctx_size after)
 
         LOGI("TurboQuant: %d layers, %d kv_heads, head_dim=%d, ctx=%d",
              n_layers, n_heads, head_dim, ctx_size);
@@ -224,7 +225,8 @@ Java_com_remotellm_LlamaModule_nativeLoadModel(JNIEnv *env, jobject, jstring jMo
     }
 
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx           = g_turbo_enabled ? DEFAULT_CTX_SIZE * 4 : DEFAULT_CTX_SIZE;
+    g_current_ctx_size         = g_turbo_enabled ? DEFAULT_CTX_SIZE * 4 : DEFAULT_CTX_SIZE;
+    ctx_params.n_ctx           = g_current_ctx_size;
     ctx_params.n_batch         = BATCH_SIZE;
     ctx_params.n_ubatch        = BATCH_SIZE;
     ctx_params.n_threads       = threads;
@@ -288,7 +290,7 @@ Java_com_remotellm_LlamaModule_nativeProcessSystemPrompt(JNIEnv *env, jobject, j
 
     auto tokens = common_tokenize(g_context, formatted, has_template, has_template);
 
-    if ((int)tokens.size() > DEFAULT_CTX_SIZE - OVERFLOW_HEADROOM) {
+    if ((int)tokens.size() > g_current_ctx_size - OVERFLOW_HEADROOM) {
         LOGE("System prompt too long: %d tokens", (int)tokens.size());
         return 1;
     }
@@ -322,7 +324,7 @@ Java_com_remotellm_LlamaModule_nativeProcessUserPrompt(JNIEnv *env, jobject, jst
     auto tokens = common_tokenize(g_context, formatted, has_template, has_template);
 
     // Truncate if too long
-    const int max_size = DEFAULT_CTX_SIZE - OVERFLOW_HEADROOM;
+    const int max_size = g_current_ctx_size - OVERFLOW_HEADROOM;
     if ((int)tokens.size() > max_size) {
         LOGW("User prompt truncated from %d to %d tokens", (int)tokens.size(), max_size);
         tokens.resize(max_size);
@@ -347,8 +349,8 @@ Java_com_remotellm_LlamaModule_nativeProcessUserPrompt(JNIEnv *env, jobject, jst
 JNIEXPORT jstring JNICALL
 Java_com_remotellm_LlamaModule_nativeGenerateNextToken(JNIEnv *env, jobject) {
     // Context overflow -> shift
-    if (g_cur_pos >= DEFAULT_CTX_SIZE - OVERFLOW_HEADROOM) {
-        LOGW("Context full, shifting");
+    if (g_cur_pos >= g_current_ctx_size - OVERFLOW_HEADROOM) {
+        LOGW("Context full at %d/%d, shifting", g_cur_pos, g_current_ctx_size);
         shift_context();
     }
 
