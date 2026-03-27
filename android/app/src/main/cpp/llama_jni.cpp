@@ -106,7 +106,8 @@ static void shift_context() {
         tq_cache_shift(g_turbo_cache, n_discard, g_system_pos);
     }
 
-    g_cur_pos -= n_discard;
+    g_cur_pos  -= n_discard;
+    g_stop_pos -= n_discard;
 }
 
 /**
@@ -351,8 +352,8 @@ Java_com_remotellm_LlamaModule_nativeProcessUserPrompt(JNIEnv *env, jobject, jst
         return 2;
     }
 
-    // g_cur_pos was already advanced by decode_tokens_in_batches
-    g_stop_pos = g_cur_pos + prompt_size + maxTokens;
+    // g_cur_pos was already advanced by decode_tokens_in_batches — don't add prompt_size again
+    g_stop_pos = g_cur_pos + maxTokens;
     return 0;
 }
 
