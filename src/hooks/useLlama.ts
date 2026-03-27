@@ -30,6 +30,8 @@ export function useLlama() {
           memoryMB: event.memoryMB ?? 0,
           totalTokens: event.totalTokens ?? 0,
           timeToFirstToken: event.timeToFirstTokenMs ?? 0,
+          compressionRatio: event.compressionRatio ?? 0,
+          fallbackRate: event.fallbackRate ?? 0,
         });
         setStatus('ready');
       } else {
@@ -84,5 +86,9 @@ export function useLlama() {
     setStatus('unloaded');
   }, []);
 
-  return {status, streamingText, benchmarks, loadModel, generate, stop, unload};
+  const setTurboMode = useCallback((enabled: boolean) => {
+    NativeLlama.setTurboMode(enabled);
+  }, []);
+
+  return {status, streamingText, benchmarks, loadModel, generate, stop, unload, setTurboMode};
 }

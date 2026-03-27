@@ -11,6 +11,8 @@ export interface BenchmarkStats {
   memoryMB: number;
   totalTokens: number;
   timeToFirstToken: number;
+  compressionRatio: number;
+  fallbackRate: number;
 }
 
 export type ModelStatus = 'unloaded' | 'loading' | 'ready' | 'generating' | 'error';

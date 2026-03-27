@@ -14,6 +14,9 @@ export interface Spec extends TurboModule {
   startGeneration(prompt: string, maxTokens: number): void;
   stopGeneration(): void;
 
+  // TurboQuant compression
+  setTurboMode(enabled: boolean): void;
+
   // Event lifecycle (required for NativeEventEmitter)
   addListener(eventName: string): void;
   removeListeners(count: number): void;

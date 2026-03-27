@@ -14,7 +14,7 @@ function genId() {
 }
 
 export default function ChatScreen() {
-  const {status, streamingText, benchmarks, loadModel, generate, stop} =
+  const {status, streamingText, benchmarks, loadModel, generate, stop, setTurboMode} =
     useLlama();
   const {downloadState, downloadModel, cancelDownload, isModelDownloaded, getModelPath} =
     useModelDownloader();
@@ -23,6 +23,7 @@ export default function ChatScreen() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [currentModelId, setCurrentModelId] = useState<string | null>(null);
   const [downloadedModels, setDownloadedModels] = useState<Set<string>>(new Set());
+  const [turboEnabled, setTurboEnabled] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const assistantIdRef = useRef<string | null>(null);
   const isGeneratingRef = useRef(false);
@@ -125,6 +126,14 @@ export default function ChatScreen() {
     [currentModelId, status, loadModel, getModelPath],
   );
 
+  const handleToggleTurbo = useCallback(
+    (enabled: boolean) => {
+      setTurboEnabled(enabled);
+      setTurboMode(enabled);
+    },
+    [setTurboMode],
+  );
+
   const handleSend = useCallback(
     (text: string) => {
       if (isGeneratingRef.current) return;
@@ -178,7 +187,7 @@ export default function ChatScreen() {
             {isDownloading
               ? `Downloading... ${downloadState.downloadedMB}/${downloadState.totalMB || '?'} MB`
               : currentModel
-              ? `${currentModel.name} — `
+              ? `${currentModel.name}${turboEnabled ? ' [TURBO]' : ''} — `
               : ''}
             {!isDownloading &&
               (status === 'ready'
@@ -242,6 +251,8 @@ export default function ChatScreen() {
         modelStatus={status}
         downloadState={downloadState}
         downloadedModels={downloadedModels}
+        turboEnabled={turboEnabled}
+        onToggleTurbo={handleToggleTurbo}
       />
     </View>
   );

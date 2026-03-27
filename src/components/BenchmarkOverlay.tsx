@@ -36,6 +36,18 @@ export default function BenchmarkOverlay({stats, visible, onDismiss}: Props) {
           <Text style={styles.label}>Time to first token</Text>
           <Text style={styles.value}>{stats.timeToFirstToken.toFixed(0)} ms</Text>
         </View>
+        {stats.compressionRatio > 0 && (
+          <>
+            <View style={styles.row}>
+              <Text style={styles.label}>Compression</Text>
+              <Text style={styles.value}>{stats.compressionRatio.toFixed(1)}x</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Fallback rate</Text>
+              <Text style={styles.value}>{(stats.fallbackRate * 100).toFixed(1)}%</Text>
+            </View>
+          </>
+        )}
         <Text style={styles.hint}>Tap to dismiss</Text>
       </View>
     </TouchableOpacity>

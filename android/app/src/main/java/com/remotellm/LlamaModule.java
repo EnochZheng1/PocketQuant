@@ -24,6 +24,7 @@ public class LlamaModule extends NativeLlamaSpec {
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private boolean modelLoaded = false;
     private boolean backendInitialized = false;
+    private boolean turboModeRequested = false;
 
     // JNI native methods
     private native void nativeInit(String nativeLibDir);
@@ -79,7 +80,7 @@ public class LlamaModule extends NativeLlamaSpec {
                     modelLoaded = false;
                 }
 
-                int result = nativeLoadModel(modelPath, nThreads, false);
+                int result = nativeLoadModel(modelPath, nThreads, turboModeRequested);
                 if (result == 0) {
                     // Process a default system prompt
                     nativeProcessSystemPrompt("You are a helpful assistant.");
@@ -158,6 +159,17 @@ public class LlamaModule extends NativeLlamaSpec {
                 doneEvent.putDouble("timeToFirstTokenMs", ttft);
                 doneEvent.putDouble("memoryMB",
                     android.os.Debug.getNativeHeapAllocatedSize() / (1024.0 * 1024.0));
+
+                // Include turbo compression stats if enabled
+                if (turboModeRequested) {
+                    float[] turboStats = nativeGetTurboStats();
+                    if (turboStats != null && turboStats.length >= 3) {
+                        doneEvent.putDouble("compressionRatio", turboStats[0]);
+                        doneEvent.putDouble("fallbackRate", turboStats[1]);
+                        doneEvent.putDouble("compressedEntries", turboStats[2]);
+                    }
+                }
+
                 sendEvent("onToken", doneEvent);
 
             } catch (Exception e) {
@@ -204,6 +216,11 @@ public class LlamaModule extends NativeLlamaSpec {
         if (isGenerating.get()) return "generating";
         if (modelLoaded) return "ready";
         return "unloaded";
+    }
+
+    @Override
+    public void setTurboMode(boolean enabled) {
+        turboModeRequested = enabled;
     }
 
     private void sendEvent(String eventName, @Nullable WritableMap params) {

@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Modal,
   TouchableOpacity,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import type {ModelStatus} from '../types';
 import type {DownloadState, DownloadFile} from '../hooks/useModelDownloader';
@@ -85,6 +86,8 @@ interface Props {
   modelStatus: ModelStatus;
   downloadState: DownloadState;
   downloadedModels: Set<string>;
+  turboEnabled: boolean;
+  onToggleTurbo: (enabled: boolean) => void;
 }
 
 function ProgressBar({progress}: {progress: number}) {
@@ -120,6 +123,8 @@ export default function ModelPicker({
   modelStatus,
   downloadState,
   downloadedModels,
+  turboEnabled,
+  onToggleTurbo,
 }: Props) {
   const isLoading = modelStatus === 'loading';
 
@@ -198,6 +203,21 @@ export default function ModelPicker({
               </TouchableOpacity>
             );
           })}
+
+          <View style={styles.turboRow}>
+            <View>
+              <Text style={styles.turboLabel}>TurboQuant 1-bit Cache</Text>
+              <Text style={styles.turboDesc}>
+                {turboEnabled ? '13x compression, 4x context' : 'Standard KV cache'}
+              </Text>
+            </View>
+            <Switch
+              value={turboEnabled}
+              onValueChange={onToggleTurbo}
+              trackColor={{false: '#3A3A3C', true: '#30D158'}}
+              thumbColor="#FFFFFF"
+            />
+          </View>
 
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeText}>Close</Text>
@@ -309,6 +329,26 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 20,
     fontWeight: '700',
+  },
+  turboRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#2C2C2E',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  turboLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  turboDesc: {
+    color: '#8E8E93',
+    fontSize: 12,
+    marginTop: 2,
   },
   closeButton: {
     alignSelf: 'center',
