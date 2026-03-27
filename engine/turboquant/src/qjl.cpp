@@ -18,12 +18,12 @@
 #include <math.h>
 #include <string.h>
 
-// Temporary buffer for error computation (stack-allocated, d <= 256)
+// Stack-allocated, 16-byte aligned for NEON. d <= 256.
 #define TQ_MAX_DIM 256
 
 int tq_qjl_check_impl(const float *original, const uint32_t *bits, int d,
                        float scale, float threshold, int m) {
-    float error[TQ_MAX_DIM];
+    alignas(16) float error[TQ_MAX_DIM];
 
     // Step 1: compute error = original - reconstruction
     int n_words = d / 32;

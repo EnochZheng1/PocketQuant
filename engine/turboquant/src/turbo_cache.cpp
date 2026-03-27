@@ -121,8 +121,10 @@ void tq_cache_store(tq_cache *cache, int layer, int head, int pos,
     tq_layer_cache *lc = is_value ? &cache->v_cache[layer] : &cache->k_cache[layer];
     size_t entry_idx = (size_t)head * cache->max_seq + pos;
 
-    // Working buffer (stack-allocated for d <= 256)
-    float rotated[256];
+    // Stack-allocated, 16-byte aligned for NEON. Zero heap overhead.
+    // This runs 1000+ times per token (every head × every layer), so
+    // heap allocation here would destroy TPS via fragmentation.
+    alignas(16) float rotated[256];
     memcpy(rotated, vec, d * sizeof(float));
 
     // Step 1: sign-flip
@@ -136,7 +138,7 @@ void tq_cache_store(tq_cache *cache, int layer, int head, int pos,
 #endif
 
     // Step 3: 1-bit quantize
-    uint32_t bits[8]; // max d=256 → 8 words
+    alignas(16) uint32_t bits[8]; // max d=256 → 8 words
     float scale;
 #if defined(TQ_HAVE_NEON)
     tq_quantize_1bit_neon(rotated, d, bits, &scale);

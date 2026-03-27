@@ -126,7 +126,7 @@ void tq_quantize_1bit_neon(const float *input, int d, uint32_t *out_bits, float 
             uint16x4_t narrow = vshrn_n_u32(mask, 16);
             // Extract the 4 sign bits from the narrowed result
             // Each lane is 0xFFFF or 0x0000 — we need bit 0 of each
-            uint16_t lanes[4];
+            alignas(8) uint16_t lanes[4];
             vst1_u16(lanes, narrow);
             word |= ((lanes[0] & 1) << (g * 4 + 0));
             word |= ((lanes[1] & 1) << (g * 4 + 1));
@@ -149,24 +149,17 @@ void tq_dequantize_1bit_neon(const uint32_t *bits, int d, float scale, float *ou
     for (int w = 0; w < n_words; w++) {
         uint32_t word = bits[w];
         for (int g = 0; g < 8; g++) {
-            // Build a mask from 4 bits of the word
-            uint32_t b0 = (word >> (g * 4 + 0)) & 1;
-            uint32_t b1 = (word >> (g * 4 + 1)) & 1;
-            uint32_t b2 = (word >> (g * 4 + 2)) & 1;
-            uint32_t b3 = (word >> (g * 4 + 3)) & 1;
-
-            // Create selection mask: 0xFFFFFFFF for bit=1, 0x00000000 for bit=0
-            uint32_t mask_arr[4] = {
-                b0 ? 0xFFFFFFFFu : 0u,
-                b1 ? 0xFFFFFFFFu : 0u,
-                b2 ? 0xFFFFFFFFu : 0u,
-                b3 ? 0xFFFFFFFFu : 0u
+            // Build 4 floats from 4 bits using aligned temp array.
+            // Direct NEON vector initialization {a,b,c,d} is a Clang extension
+            // that fails on strict NDK/GCC — use vld1q_f32 from aligned memory.
+            alignas(16) float temp[4] = {
+                (word >> (g * 4 + 0)) & 1 ? scale : -scale,
+                (word >> (g * 4 + 1)) & 1 ? scale : -scale,
+                (word >> (g * 4 + 2)) & 1 ? scale : -scale,
+                (word >> (g * 4 + 3)) & 1 ? scale : -scale
             };
-            uint32x4_t sel = vld1q_u32(mask_arr);
-
-            // Select between +scale and -scale using bitwise select
-            float32x4_t result = vbslq_f32(sel, pos_val, neg_val);
-            vst1q_f32(&output[w * 32 + g * 4], result);
+            float32x4_t v = vld1q_f32(temp);
+            vst1q_f32(&output[w * 32 + g * 4], v);
         }
     }
 }
