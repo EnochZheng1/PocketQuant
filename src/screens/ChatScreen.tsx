@@ -1,6 +1,5 @@
 import React, {useState, useRef, useCallback, useEffect} from 'react';
-import {View, FlatList, StyleSheet, Text, TouchableOpacity} from 'react-native';
-import {activateKeepAwake, deactivateKeepAwake} from 'react-native-keep-awake';
+import {View, FlatList, StyleSheet, Text, TouchableOpacity, Platform} from 'react-native';
 import type {Message} from '../types';
 import {useLlama} from '../hooks/useLlama';
 import {useModelDownloader} from '../hooks/useModelDownloader';
@@ -54,15 +53,6 @@ export default function ChatScreen() {
       scrollToEnd();
     }
   }, [streamingText]);
-
-  // Prevent screen timeout during inference
-  useEffect(() => {
-    if (status === 'generating') {
-      activateKeepAwake();
-    } else {
-      deactivateKeepAwake();
-    }
-  }, [status]);
 
   // When generation completes, finalize the message
   useEffect(() => {

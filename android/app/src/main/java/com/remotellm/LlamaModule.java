@@ -9,6 +9,9 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import android.app.Activity;
+import android.view.WindowManager;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,6 +100,9 @@ public class LlamaModule extends NativeLlamaSpec {
         isGenerating.set(true);
         stopRequested.set(false);
 
+        // Keep screen on during generation to prevent CPU throttling
+        setKeepScreenOn(true);
+
         executor.execute(() -> {
             try {
                 long startTime = System.nanoTime();
@@ -160,6 +166,7 @@ public class LlamaModule extends NativeLlamaSpec {
                 sendEvent("onToken", errorEvent);
             } finally {
                 isGenerating.set(false);
+                setKeepScreenOn(false);
             }
         });
     }
@@ -167,6 +174,18 @@ public class LlamaModule extends NativeLlamaSpec {
     @Override
     public void stopGeneration() {
         stopRequested.set(true);
+    }
+
+    private void setKeepScreenOn(boolean on) {
+        Activity activity = getCurrentActivity();
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            if (on) {
+                activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
     }
 
     @Override
