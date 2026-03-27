@@ -1,18 +1,20 @@
 {
-  "name": "PocketQuant",
+  "name": "RemoteLLM",
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "adb reverse tcp:8081 tcp:8081 && react-native run-android",
+    "push-model": "adb shell run-as com.remotellm mkdir -p /data/data/com.remotellm/files/models && for f in models/*.gguf; do adb push $f /data/local/tmp/ && adb shell run-as com.remotellm cp /data/local/tmp/$(basename $f) /data/data/com.remotellm/files/models/; done",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest"
   },
   "dependencies": {
+    "@react-native/new-app-screen": "0.84.1",
     "react": "19.2.3",
     "react-native": "0.84.1",
-    "@react-native/new-app-screen": "0.84.1",
+    "react-native-fs": "^2.20.0",
     "react-native-safe-area-context": "^5.5.2"
   },
   "devDependencies": {

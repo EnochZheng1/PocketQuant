@@ -104,7 +104,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path file('src/main/cpp/CMakeLists.txt')
+            path file('src/main/jni/CMakeLists.txt')
             version "3.22.1"
         }
     }
@@ -139,4 +139,65 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+}
+
+// Auto-push GGUF models to device after install
+abstract class PushModelsTask extends DefaultTask {
+    @javax.inject.Inject
+    abstract org.gradle.process.ExecOperations getExecOps()
+
+    @org.gradle.api.tasks.Input
+    String adbPath
+
+    @org.gradle.api.tasks.InputDirectory
+    @org.gradle.api.tasks.Optional
+    File modelsDir
+
+    @org.gradle.api.tasks.Input
+    String deviceModelsDir = '/data/data/com.remotellm/files/models'
+
+    @org.gradle.api.tasks.TaskAction
+    void pushModels() {
+        if (modelsDir == null || !modelsDir.exists()) return
+
+        // Use run-as to access app's internal data dir
+        execOps.exec {
+            commandLine adbPath, 'shell', 'run-as', 'com.remotellm', 'mkdir', '-p', deviceModelsDir
+        }
+
+        modelsDir.listFiles()?.findAll { it.name.endsWith('.gguf') }?.each { modelFile ->
+            def result = new ByteArrayOutputStream()
+            execOps.exec {
+                commandLine adbPath, 'shell', 'run-as', 'com.remotellm', 'stat', '-c', '%s', "${deviceModelsDir}/${modelFile.name}"
+                standardOutput = result
+                ignoreExitValue = true
+            }
+            if (result.toString().trim() != modelFile.length().toString()) {
+                println "Pushing model: ${modelFile.name} (${(modelFile.length() / 1024 / 1024).intValue()} MB)"
+                // Push to tmp first, then move with run-as (adb push can't write to app internal dir)
+                def tmpPath = "/data/local/tmp/${modelFile.name}"
+                execOps.exec {
+                    commandLine adbPath, 'push', modelFile.absolutePath, tmpPath
+                }
+                execOps.exec {
+                    commandLine adbPath, 'shell', 'run-as', 'com.remotellm', 'cp', tmpPath, "${deviceModelsDir}/${modelFile.name}"
+                }
+                execOps.exec {
+                    commandLine adbPath, 'shell', 'rm', tmpPath
+                    ignoreExitValue = true
+                }
+            } else {
+                println "Model already on device: ${modelFile.name}"
+            }
+        }
+    }
+}
+
+tasks.register('pushModels', PushModelsTask) {
+    adbPath = android.adbExecutable.absolutePath
+    modelsDir = file("${rootProject.projectDir}/../models")
+}
+
+afterEvaluate {
+    tasks.named('installDebug').configure { it.finalizedBy('pushModels') }
 }

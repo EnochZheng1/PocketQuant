@@ -54,11 +54,14 @@ export function useLlama() {
 
   const loadModel = useCallback(async (path: string) => {
     setStatus('loading');
+    console.log('[PocketQuant] Loading model from:', path);
     try {
       await NativeLlama.loadModel(path);
+      console.log('[PocketQuant] Model loaded successfully');
       setStatus('ready');
       return true;
-    } catch {
+    } catch (e: any) {
+      console.error('[PocketQuant] Failed to load model:', e?.message || e);
       setStatus('error');
       return false;
     }

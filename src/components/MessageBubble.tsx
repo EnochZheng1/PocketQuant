@@ -1,5 +1,12 @@
-import React from 'react';
-import {View, Text, StyleSheet} from 'react-native';
+import React, {useCallback} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ToastAndroid,
+} from 'react-native';
+import Clipboard from '../utils/clipboard';
 import type {Message} from '../types';
 
 interface Props {
@@ -9,8 +16,17 @@ interface Props {
 function MessageBubble({message}: Props) {
   const isUser = message.role === 'user';
 
+  const handleLongPress = useCallback(() => {
+    if (!message.content) return;
+    Clipboard.setString(message.content);
+    ToastAndroid.show('Copied to clipboard', ToastAndroid.SHORT);
+  }, [message.content]);
+
   return (
-    <View
+    <TouchableOpacity
+      onLongPress={handleLongPress}
+      activeOpacity={0.8}
+      delayLongPress={400}
       style={[
         styles.container,
         isUser ? styles.userContainer : styles.assistantContainer,
@@ -20,12 +36,14 @@ function MessageBubble({message}: Props) {
           styles.bubble,
           isUser ? styles.userBubble : styles.assistantBubble,
         ]}>
-        <Text style={[styles.text, isUser ? styles.userText : styles.assistantText]}>
+        <Text
+          style={[styles.text, isUser ? styles.userText : styles.assistantText]}
+          selectable>
           {message.content}
           {message.isStreaming && <Text style={styles.cursor}>|</Text>}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
